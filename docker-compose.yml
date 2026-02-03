@@ -1,0 +1,193 @@
+version: '3.8'
+
+# ============================================================================
+# OpenClaw Production Docker Compose Configuration
+# ============================================================================
+# Features:
+# - Multi-container setup with gateway and optional services
+# - Health checks and restart policies
+# - Volume management for persistence
+# - Environment-based configuration
+# - Development and production profiles
+# ============================================================================
+
+services:
+  # ==========================================================================
+  # OpenClaw Gateway - Main Service
+  # ==========================================================================
+  openclaw-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: openclaw-gateway:latest
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "${OPENCLAW_PORT:-18789}:18789"
+      - "${OPENCLAW_CANVAS_PORT:-18793}:18793"
+    environment:
+      # Core Configuration
+      - NODE_ENV=${NODE_ENV:-production}
+      - OPENCLAW_HOME=/home/openclaw/.openclaw
+      - OPENCLAW_WORKSPACE=/home/openclaw/.openclaw/workspace
+      - OPENCLAW_PORT=${OPENCLAW_PORT:-18789}
+      - OPENCLAW_CANVAS_PORT=${OPENCLAW_CANVAS_PORT:-18793}
+      - OPENCLAW_BIND=${OPENCLAW_BIND:-lan}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      
+      # Agent Configuration
+      - OPENCLAW_AGENT_MODEL=${OPENCLAW_AGENT_MODEL:-claude-sonnet-4}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      
+      # Channel Tokens
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      
+      # Security
+      - OPENCLAW_SANDBOX_MODE=${OPENCLAW_SANDBOX_MODE:-non-main}
+      - OPENCLAW_TOOLS_ELEVATED=${OPENCLAW_TOOLS_ELEVATED:-false}
+      
+      # Performance
+      - OPENCLAW_MAX_CONCURRENT=${OPENCLAW_MAX_CONCURRENT:-4}
+      - OPENCLAW_SUBAGENT_MAX_CONCURRENT=${OPENCLAW_SUBAGENT_MAX_CONCURRENT:-8}
+      
+      # Logging
+      - OPENCLAW_LOG_LEVEL=${OPENCLAW_LOG_LEVEL:-info}
+      - OPENCLAW_LOG_FORMAT=${OPENCLAW_LOG_FORMAT:-json}
+    
+    volumes:
+      # Config and workspace persistence
+      - openclaw-config:/home/openclaw/.openclaw
+      - openclaw-workspace:/home/openclaw/.openclaw/workspace
+      
+      # Optional: bind mount for development
+      # - ./config:/home/openclaw/.openclaw
+      # - ./workspace:/home/openclaw/.openclaw/workspace
+    
+    networks:
+      - openclaw-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    depends_on:
+      - redis
+    
+    labels:
+      - "com.openclaw.service=gateway"
+      - "com.openclaw.version=1.0.0"
+  
+  # ==========================================================================
+  # Redis - Optional cache/session store
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: openclaw-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - openclaw-redis:/data
+    networks:
+      - openclaw-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      - "com.openclaw.service=redis"
+  
+  # ==========================================================================
+  # CLI Container - For management tasks
+  # ==========================================================================
+  openclaw-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: openclaw-gateway:latest
+    container_name: openclaw-cli
+    profiles:
+      - cli
+    environment:
+      - OPENCLAW_HOME=/home/openclaw/.openclaw
+      - OPENCLAW_WORKSPACE=/home/openclaw/.openclaw/workspace
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      - openclaw-config:/home/openclaw/.openclaw
+      - openclaw-workspace:/home/openclaw/.openclaw/workspace
+    networks:
+      - openclaw-network
+    entrypoint: ["node", "dist/index.js"]
+    command: ["--help"]
+    labels:
+      - "com.openclaw.service=cli"
+  
+  # ==========================================================================
+  # Development Container (with dev tools)
+  # ==========================================================================
+  openclaw-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: openclaw-dev:latest
+    container_name: openclaw-dev
+    profiles:
+      - dev
+    ports:
+      - "${OPENCLAW_PORT:-18789}:18789"
+      - "${OPENCLAW_CANVAS_PORT:-18793}:18793"
+    environment:
+      - NODE_ENV=development
+      - OPENCLAW_HOME=/home/openclaw/.openclaw
+      - OPENCLAW_WORKSPACE=/home/openclaw/.openclaw/workspace
+      - OPENCLAW_LOG_LEVEL=debug
+    volumes:
+      - openclaw-config:/home/openclaw/.openclaw
+      - openclaw-workspace:/home/openclaw/.openclaw/workspace
+      # Mount source code for hot reload
+      - ./src:/app/src:ro
+    networks:
+      - openclaw-network
+    stdin_open: true
+    tty: true
+    labels:
+      - "com.openclaw.service=dev"
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  openclaw-config:
+    driver: local
+    labels:
+      - "com.openclaw.volume=config"
+  
+  openclaw-workspace:
+    driver: local
+    labels:
+      - "com.openclaw.volume=workspace"
+  
+  openclaw-redis:
+    driver: local
+    labels:
+      - "com.openclaw.volume=redis"
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  openclaw-network:
+    driver: bridge
+    labels:
+      - "com.openclaw.network=main"

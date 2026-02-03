@@ -1,0 +1,32 @@
+# OpenClaw Docker Deployment
+
+# Environment files (contain secrets)
+.env
+.env.*
+!.env.template
+
+# Backups (may contain sensitive data)
+backups/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Config with secrets
+config/openclaw.json
+config/*.json
+!config/openclaw.production.json
+
+# Temporary files
+tmp/
+*.tmp

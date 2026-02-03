@@ -1,0 +1,38 @@
+# Docker ignore patterns
+.git
+.gitignore
+*.md
+!README.md
+
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Backups
+backups/
+*.tar.gz
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Test
+test/
+*.test.js
+coverage/

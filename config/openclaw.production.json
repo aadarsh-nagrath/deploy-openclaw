@@ -1,0 +1,146 @@
+# ============================================================================
+# Production Configuration Example
+# ============================================================================
+# This file shows advanced configuration options for production deployments
+# Copy relevant sections to your openclaw.json
+# ============================================================================
+
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.1"
+  },
+  
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "<your-secure-token>"
+    }
+  },
+  
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "claude-sonnet-4"
+      },
+      "workspace": "/home/openclaw/.openclaw/workspace",
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "sandbox": {
+        "mode": "non-main",
+        "scope": "agent",
+        "workspaceAccess": "none",
+        "workspaceRoot": "~/.openclaw/sandboxes",
+        "docker": {
+          "image": "openclaw-sandbox:latest",
+          "workdir": "/workspace",
+          "readOnlyRoot": true,
+          "tmpfs": ["/tmp", "/var/tmp", "/run"],
+          "network": "none",
+          "user": "1000:1000",
+          "capDrop": ["ALL"],
+          "pidsLimit": 256,
+          "memory": "1g",
+          "memorySwap": "2g",
+          "cpus": 1
+        },
+        "prune": {
+          "idleHours": 24,
+          "maxAgeDays": 7
+        }
+      }
+    }
+  },
+  
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "allowFrom": [],
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      }
+    },
+    "telegram": {
+      "enabled": true,
+      "botToken": "${TELEGRAM_BOT_TOKEN}",
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist"
+    },
+    "discord": {
+      "enabled": true,
+      "botToken": "${DISCORD_BOT_TOKEN}",
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist"
+    },
+    "slack": {
+      "enabled": true,
+      "botToken": "${SLACK_BOT_TOKEN}",
+      "appToken": "${SLACK_APP_TOKEN}",
+      "groupPolicy": "open"
+    }
+  },
+  
+  "messages": {
+    "groupChat": {
+      "mentionPatterns": ["@openclaw"]
+    },
+    "ackReactionScope": "group-mentions"
+  },
+  
+  "tools": {
+    "sandbox": {
+      "tools": {
+        "allow": [
+          "exec",
+          "process",
+          "read",
+          "write",
+          "edit",
+          "sessions_list",
+          "sessions_history",
+          "sessions_send",
+          "sessions_spawn",
+          "session_status"
+        ],
+        "deny": [
+          "browser",
+          "canvas",
+          "nodes",
+          "cron",
+          "gateway"
+        ]
+      }
+    }
+  },
+  
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "boot-md": {
+          "enabled": true
+        },
+        "command-logger": {
+          "enabled": true
+        },
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  }
+}
