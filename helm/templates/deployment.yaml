@@ -4,6 +4,10 @@ metadata:
   name: {{ include "openclaw.fullname" . }}
   labels:
     {{- include "openclaw.labels" . | nindent 4 }}
+  {{- with .Values.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -11,27 +15,54 @@ spec:
   selector:
     matchLabels:
       {{- include "openclaw.selectorLabels" . | nindent 6 }}
+  {{- if .Values.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- end }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "openclaw.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "openclaw.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ end }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -40,6 +71,11 @@ spec:
             - name: canvas
               containerPort: {{ .Values.openclaw.gateway.canvasPort }}
               protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: NODE_ENV
               value: "production"
@@ -51,33 +87,138 @@ spec:
               value: "{{ .Values.openclaw.gateway.bind }}"
             - name: OPENCLAW_LOG_LEVEL
               value: "{{ .Values.openclaw.logLevel }}"
+            - name: OPENCLAW_LOG_FORMAT
+              value: "{{ .Values.openclaw.logFormat }}"
             - name: OPENCLAW_AGENT_MODEL
               value: "{{ .Values.openclaw.agent.model }}"
+            - name: OPENCLAW_MAX_CONCURRENT
+              value: "{{ .Values.openclaw.agent.maxConcurrent }}"
+            - name: OPENCLAW_SUBAGENT_MAX_CONCURRENT
+              value: "{{ .Values.openclaw.agent.subagentMaxConcurrent }}"
+            - name: OPENCLAW_SANDBOX_MODE
+              value: "{{ .Values.openclaw.sandbox.mode }}"
+            {{- if .Values.openclaw.heartbeat.enabled }}
+            - name: OPENCLAW_HEARTBEAT_INTERVAL
+              value: "{{ .Values.openclaw.heartbeat.intervalMinutes }}m"
+            {{- end }}
+            # Gateway token from secret
             - name: OPENCLAW_GATEWAY_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.name }}
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
                   key: gateway-token
-            {{- if .Values.secrets.anthropicApiKey }}
+            # AI Provider API Keys
+            {{- if or .Values.secrets.anthropicApiKey .Values.secrets.existingSecret }}
             - name: ANTHROPIC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.name }}
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
                   key: anthropic-api-key
+                  optional: true
             {{- end }}
-            {{- if .Values.secrets.telegramBotToken }}
+            {{- if or .Values.secrets.openaiApiKey .Values.secrets.existingSecret }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
+                  key: openai-api-key
+                  optional: true
+            {{- end }}
+            {{- if or .Values.secrets.googleApiKey .Values.secrets.existingSecret }}
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
+                  key: google-api-key
+                  optional: true
+            {{- end }}
+            # Channel Tokens
+            {{- if or .Values.secrets.telegramBotToken .Values.secrets.existingSecret }}
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.secrets.name }}
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
                   key: telegram-bot-token
+                  optional: true
             {{- end }}
+            {{- if or .Values.secrets.discordBotToken .Values.secrets.existingSecret }}
+            - name: DISCORD_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
+                  key: discord-bot-token
+                  optional: true
+            {{- end }}
+            {{- if or .Values.secrets.slackBotToken .Values.secrets.existingSecret }}
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
+                  key: slack-bot-token
+                  optional: true
+            {{- end }}
+            {{- if or .Values.secrets.slackAppToken .Values.secrets.existingSecret }}
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret | default .Values.secrets.name }}
+                  key: slack-app-token
+                  optional: true
+            {{- end }}
+            # Redis connection
+            {{- if or .Values.redis.enabled .Values.externalRedis.enabled }}
+            - name: REDIS_HOST
+              value: {{ if .Values.externalRedis.enabled }}{{ .Values.externalRedis.host }}{{ else }}{{ include "openclaw.fullname" . }}-redis-master{{ end }}
+            - name: REDIS_PORT
+              value: "{{ if .Values.externalRedis.enabled }}{{ .Values.externalRedis.port }}{{ else }}6379{{ end }}"
+            {{- end }}
+            # Extra environment variables
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
+            httpGet:
+              path: {{ .Values.livenessProbe.httpGet.path }}
+              port: {{ .Values.livenessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
+            httpGet:
+              path: {{ .Values.readinessProbe.httpGet.path }}
+              port: {{ .Values.readinessProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+          {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.startupProbe.httpGet.path }}
+              port: {{ .Values.startupProbe.httpGet.port }}
+            initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+            successThreshold: {{ .Values.startupProbe.successThreshold }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             {{- if .Values.persistence.config.enabled }}
             - name: config
@@ -87,16 +228,44 @@ spec:
             - name: workspace
               mountPath: /home/node/.openclaw/workspace
             {{- end }}
+            {{- if .Values.persistence.sessions.enabled }}
+            - name: sessions
+              mountPath: /home/node/.openclaw/agents
+            {{- end }}
+            {{- if .Values.configMap.enabled }}
+            - name: custom-config
+              mountPath: /home/node/.openclaw/custom
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.sidecars }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
         {{- if .Values.persistence.config.enabled }}
         - name: config
           persistentVolumeClaim:
-            claimName: {{ include "openclaw.fullname" . }}-config
+            claimName: {{ .Values.persistence.config.existingClaim | default (printf "%s-config" (include "openclaw.fullname" .)) }}
         {{- end }}
         {{- if .Values.persistence.workspace.enabled }}
         - name: workspace
           persistentVolumeClaim:
-            claimName: {{ include "openclaw.fullname" . }}-workspace
+            claimName: {{ .Values.persistence.workspace.existingClaim | default (printf "%s-workspace" (include "openclaw.fullname" .)) }}
+        {{- end }}
+        {{- if .Values.persistence.sessions.enabled }}
+        - name: sessions
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.sessions.existingClaim | default (printf "%s-sessions" (include "openclaw.fullname" .)) }}
+        {{- end }}
+        {{- if .Values.configMap.enabled }}
+        - name: custom-config
+          configMap:
+            name: {{ include "openclaw.fullname" . }}-config
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -108,5 +277,9 @@ spec:
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}

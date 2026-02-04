@@ -1,8 +1,8 @@
 apiVersion: v2
 name: openclaw
-description: A Helm chart for deploying OpenClaw AI agent gateway
+description: A Helm chart for deploying OpenClaw AI agent gateway on Kubernetes
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "2026.2.1"
 keywords:
   - openclaw
@@ -12,9 +12,25 @@ keywords:
   - whatsapp
   - telegram
   - discord
+  - slack
+  - chatbot
+  - automation
 home: https://github.com/aadarsh-nagrath/deploy-openclaw
 sources:
   - https://github.com/openclaw/openclaw
+  - https://docs.openclaw.ai
 maintainers:
   - name: Aadarsh Nagrath
     email: anagrath1@gmail.com
+icon: https://raw.githubusercontent.com/openclaw/openclaw/main/docs/public/icon.png
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/category: integration-delivery
+  artifacthub.io/signKey: |
+    fingerprint: ""
+    url: ""
+dependencies:
+  - name: redis
+    version: "18.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

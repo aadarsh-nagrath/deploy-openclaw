@@ -1,47 +1,129 @@
-# Default values for openclaw helm chart
+# ============================================================================
+# OpenClaw Helm Chart - Advanced Configuration
+# ============================================================================
+# Full configuration reference for production deployments
+# ============================================================================
 
+# ----------------------------------------------------------------------------
+# Deployment Configuration
+# ----------------------------------------------------------------------------
 replicaCount: 1
 
 image:
   repository: aadarshnagrath/openclaw-server
   pullPolicy: IfNotPresent
   tag: "latest"
+  # Digest takes precedence over tag
+  digest: ""
 
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# ----------------------------------------------------------------------------
+# Service Account
+# ----------------------------------------------------------------------------
 serviceAccount:
   create: true
   annotations: {}
+  # AWS: eks.amazonaws.com/role-arn: arn:aws:iam::xxx:role/openclaw
+  # GCP: iam.gke.io/gcp-service-account: openclaw@project.iam.gserviceaccount.com
   name: ""
+  automountServiceAccountToken: true
 
+# ----------------------------------------------------------------------------
+# Pod Configuration
+# ----------------------------------------------------------------------------
 podAnnotations: {}
+  # prometheus.io/scrape: "true"
+  # prometheus.io/port: "18789"
+
+podLabels: {}
 
 podSecurityContext:
   fsGroup: 1000
+  fsGroupChangePolicy: "OnRootMismatch"
 
 securityContext:
   runAsNonRoot: true
   runAsUser: 1000
   runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
 
+# Priority class for scheduling
+priorityClassName: ""
+
+# Termination grace period
+terminationGracePeriodSeconds: 30
+
+# DNS configuration
+dnsPolicy: ClusterFirst
+dnsConfig: {}
+
+# Host aliases
+hostAliases: []
+  # - ip: "127.0.0.1"
+  #   hostnames:
+  #     - "foo.local"
+
+# ----------------------------------------------------------------------------
+# Service Configuration
+# ----------------------------------------------------------------------------
 service:
   type: ClusterIP
   port: 18789
   canvasPort: 18793
+  # For LoadBalancer type
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: ""
+  # Node ports (when type is NodePort)
+  nodePort: ""
+  canvasNodePort: ""
+  annotations: {}
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
+# ----------------------------------------------------------------------------
+# Ingress Configuration
+# ----------------------------------------------------------------------------
 ingress:
   enabled: false
   className: ""
   annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    # nginx.ingress.kubernetes.io/websocket-services: "openclaw"
   hosts:
-    - host: openclaw.local
+    - host: openclaw.example.com
       paths:
         - path: /
-          pathType: ImplementationSpecific
+          pathType: Prefix
+          servicePort: 18789
+  tls: []
+    # - secretName: openclaw-tls
+    #   hosts:
+    #     - openclaw.example.com
+
+# Additional ingress for canvas (optional)
+canvasIngress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: canvas.openclaw.example.com
+      paths:
+        - path: /
+          pathType: Prefix
   tls: []
 
+# ----------------------------------------------------------------------------
+# Resource Management
+# ----------------------------------------------------------------------------
 resources:
   limits:
     cpu: 2000m
@@ -50,48 +132,176 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Vertical Pod Autoscaler
+vpa:
+  enabled: false
+  updateMode: "Auto"
+  minAllowed:
+    cpu: 100m
+    memory: 256Mi
+  maxAllowed:
+    cpu: 4000m
+    memory: 8Gi
+
+# ----------------------------------------------------------------------------
+# Autoscaling (HPA)
+# ----------------------------------------------------------------------------
 autoscaling:
   enabled: false
   minReplicas: 1
-  maxReplicas: 3
+  maxReplicas: 5
   targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
 
+# ----------------------------------------------------------------------------
+# Pod Disruption Budget
+# ----------------------------------------------------------------------------
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# ----------------------------------------------------------------------------
+# Scheduling
+# ----------------------------------------------------------------------------
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
+  # podAntiAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #             - key: app.kubernetes.io/name
+  #               operator: In
+  #               values:
+  #                 - openclaw
+  #         topologyKey: kubernetes.io/hostname
 
-# OpenClaw specific configuration
+topologySpreadConstraints: []
+  # - maxSkew: 1
+  #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfied: DoNotSchedule
+  #   labelSelector:
+  #     matchLabels:
+  #       app.kubernetes.io/name: openclaw
+
+# ----------------------------------------------------------------------------
+# OpenClaw Configuration
+# ----------------------------------------------------------------------------
 openclaw:
   # Gateway configuration
   gateway:
     port: 18789
     canvasPort: 18793
-    bind: "lan"
-    token: ""  # Set via secret
+    bind: "lan"  # lan | loopback | tailnet
+    token: ""  # Set via secret or auto-generate
+    
+    # Tailscale integration
+    tailscale:
+      enabled: false
+      authKey: ""
+      hostname: "openclaw"
   
   # Agent configuration
   agent:
     model: "claude-sonnet-4"
+    thinkingModel: "claude-opus-4-5-thinking"
+    fallbackModels:
+      - "claude-sonnet-4-5"
+      - "gemini-3-flash"
     maxConcurrent: 4
     subagentMaxConcurrent: 8
+    
+    # Workspace configuration
+    workspace: "/home/node/.openclaw/workspace"
+    
+    # Compaction settings
+    compaction:
+      mode: "safeguard"  # off | safeguard | aggressive
   
   # Sandbox configuration
   sandbox:
+    enabled: true
     mode: "non-main"  # off | non-main | all
+    scope: "agent"  # session | agent | shared
+    workspaceAccess: "none"  # none | ro | rw
+    
+    # Docker settings for sandbox
+    docker:
+      image: "openclaw-sandbox:bookworm-slim"
+      network: "none"
+      memory: "1g"
+      cpus: 1
+      pidsLimit: 256
+  
+  # Channel configuration
+  channels:
+    telegram:
+      enabled: false
+      dmPolicy: "pairing"
+      groupPolicy: "allowlist"
+      streamMode: "partial"
+    
+    discord:
+      enabled: false
+      dmPolicy: "pairing"
+      groupPolicy: "allowlist"
+    
+    slack:
+      enabled: false
+      mode: "socket"
+      groupPolicy: "open"
+    
+    whatsapp:
+      enabled: false
+      # Note: Requires QR code pairing
   
   # Logging
-  logLevel: "info"
-  logFormat: "json"
+  logLevel: "info"  # debug | info | warn | error
+  logFormat: "json"  # json | text
+  
+  # Heartbeat configuration
+  heartbeat:
+    enabled: true
+    intervalMinutes: 30
+  
+  # Skills configuration
+  skills:
+    nodeManager: "npm"
+    entries: {}
 
-# Secrets - API keys and tokens
+# ----------------------------------------------------------------------------
+# Secrets Management
+# ----------------------------------------------------------------------------
 secrets:
-  # Create a secret with these keys or reference existing
+  # Create secrets or use existing
   create: true
   name: "openclaw-secrets"
   
-  # API Keys (set these or use existingSecret)
+  # Use existing secret (ignores create and values below)
+  existingSecret: ""
+  
+  # Gateway token (auto-generated if empty)
+  gatewayToken: ""
+  
+  # AI Provider API Keys
   anthropicApiKey: ""
   openaiApiKey: ""
   googleApiKey: ""
@@ -102,46 +312,222 @@ secrets:
   slackBotToken: ""
   slackAppToken: ""
   
-  # Gateway token
-  gatewayToken: ""
+  # Additional secrets (key-value pairs)
+  additional: {}
+    # MY_CUSTOM_KEY: "value"
 
+# External secrets (for external-secrets operator)
+externalSecrets:
+  enabled: false
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: ""
+    kind: ClusterSecretStore
+  data: []
+    # - secretKey: anthropic-api-key
+    #   remoteRef:
+    #     key: openclaw/anthropic
+    #     property: api-key
+
+# ----------------------------------------------------------------------------
 # Persistence
+# ----------------------------------------------------------------------------
 persistence:
   enabled: true
-  storageClass: ""
+  storageClass: ""  # Uses default if empty
   accessMode: ReadWriteOnce
-  size: 5Gi
   
-  # Separate volumes for config and workspace
+  # Config volume
   config:
     enabled: true
     size: 1Gi
+    existingClaim: ""
+    annotations: {}
+  
+  # Workspace volume
   workspace:
     enabled: true
     size: 5Gi
+    existingClaim: ""
+    annotations: {}
+  
+  # Sessions volume (optional, for session persistence)
+  sessions:
+    enabled: false
+    size: 2Gi
+    existingClaim: ""
 
-# Redis subchart (optional)
+# ----------------------------------------------------------------------------
+# Init Containers
+# ----------------------------------------------------------------------------
+initContainers: []
+  # - name: init-permissions
+  #   image: busybox
+  #   command: ['sh', '-c', 'chown -R 1000:1000 /data']
+  #   volumeMounts:
+  #     - name: config
+  #       mountPath: /data
+
+# ----------------------------------------------------------------------------
+# Sidecar Containers
+# ----------------------------------------------------------------------------
+sidecars: []
+  # - name: log-shipper
+  #   image: fluent-bit
+  #   ...
+
+# ----------------------------------------------------------------------------
+# Extra Volumes
+# ----------------------------------------------------------------------------
+extraVolumes: []
+  # - name: custom-config
+  #   configMap:
+  #     name: openclaw-custom-config
+
+extraVolumeMounts: []
+  # - name: custom-config
+  #   mountPath: /custom/config
+  #   readOnly: true
+
+# ----------------------------------------------------------------------------
+# Extra Environment Variables
+# ----------------------------------------------------------------------------
+extraEnv: []
+  # - name: MY_VAR
+  #   value: "my-value"
+  # - name: SECRET_VAR
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: my-secret
+  #       key: secret-key
+
+extraEnvFrom: []
+  # - configMapRef:
+  #     name: my-configmap
+  # - secretRef:
+  #     name: my-secret
+
+# ----------------------------------------------------------------------------
+# ConfigMap for custom configuration
+# ----------------------------------------------------------------------------
+configMap:
+  enabled: false
+  data: {}
+    # openclaw.json: |
+    #   { ... }
+
+# ----------------------------------------------------------------------------
+# Redis (Optional Cache)
+# ----------------------------------------------------------------------------
 redis:
   enabled: false
   architecture: standalone
   auth:
     enabled: false
+    password: ""
   master:
     persistence:
       enabled: true
       size: 1Gi
+  replica:
+    replicaCount: 0
 
-# Health checks
+# External Redis
+externalRedis:
+  enabled: false
+  host: ""
+  port: 6379
+  password: ""
+  existingSecret: ""
+  existingSecretPasswordKey: "redis-password"
+
+# ----------------------------------------------------------------------------
+# Monitoring
+# ----------------------------------------------------------------------------
+metrics:
+  enabled: false
+  port: 9090
+  path: /metrics
+  
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: 30s
+    scrapeTimeout: 10s
+    labels: {}
+    relabelings: []
+    metricRelabelings: []
+
+# ----------------------------------------------------------------------------
+# Network Policies
+# ----------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 18789
+  egress:
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+
+# ----------------------------------------------------------------------------
+# Health Checks
+# ----------------------------------------------------------------------------
 livenessProbe:
+  enabled: true
   httpGet:
     path: /health
     port: http
   initialDelaySeconds: 30
   periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
 
 readinessProbe:
+  enabled: true
   httpGet:
     path: /health
     port: http
   initialDelaySeconds: 5
   periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30
+  successThreshold: 1
+
+# ----------------------------------------------------------------------------
+# Lifecycle Hooks
+# ----------------------------------------------------------------------------
+lifecycle: {}
+  # preStop:
+  #   exec:
+  #     command: ["/bin/sh", "-c", "sleep 10"]
+
+# ----------------------------------------------------------------------------
+# Testing
+# ----------------------------------------------------------------------------
+test:
+  enabled: false
+  image:
+    repository: busybox
+    tag: latest
