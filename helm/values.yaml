@@ -1,0 +1,147 @@
+# Default values for openclaw helm chart
+
+replicaCount: 1
+
+image:
+  repository: aadarshnagrath/openclaw-server
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+service:
+  type: ClusterIP
+  port: 18789
+  canvasPort: 18793
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: openclaw.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# OpenClaw specific configuration
+openclaw:
+  # Gateway configuration
+  gateway:
+    port: 18789
+    canvasPort: 18793
+    bind: "lan"
+    token: ""  # Set via secret
+  
+  # Agent configuration
+  agent:
+    model: "claude-sonnet-4"
+    maxConcurrent: 4
+    subagentMaxConcurrent: 8
+  
+  # Sandbox configuration
+  sandbox:
+    mode: "non-main"  # off | non-main | all
+  
+  # Logging
+  logLevel: "info"
+  logFormat: "json"
+
+# Secrets - API keys and tokens
+secrets:
+  # Create a secret with these keys or reference existing
+  create: true
+  name: "openclaw-secrets"
+  
+  # API Keys (set these or use existingSecret)
+  anthropicApiKey: ""
+  openaiApiKey: ""
+  googleApiKey: ""
+  
+  # Channel tokens
+  telegramBotToken: ""
+  discordBotToken: ""
+  slackBotToken: ""
+  slackAppToken: ""
+  
+  # Gateway token
+  gatewayToken: ""
+
+# Persistence
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  
+  # Separate volumes for config and workspace
+  config:
+    enabled: true
+    size: 1Gi
+  workspace:
+    enabled: true
+    size: 5Gi
+
+# Redis subchart (optional)
+redis:
+  enabled: false
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5

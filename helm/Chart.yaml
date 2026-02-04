@@ -1,0 +1,20 @@
+apiVersion: v2
+name: openclaw
+description: A Helm chart for deploying OpenClaw AI agent gateway
+type: application
+version: 0.1.0
+appVersion: "2026.2.1"
+keywords:
+  - openclaw
+  - ai
+  - agent
+  - gateway
+  - whatsapp
+  - telegram
+  - discord
+home: https://github.com/aadarsh-nagrath/deploy-openclaw
+sources:
+  - https://github.com/openclaw/openclaw
+maintainers:
+  - name: Aadarsh Nagrath
+    email: anagrath1@gmail.com

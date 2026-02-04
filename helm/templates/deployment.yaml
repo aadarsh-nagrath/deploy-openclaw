@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openclaw.fullname" . }}
+  labels:
+    {{- include "openclaw.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "openclaw.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "openclaw.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "openclaw.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.openclaw.gateway.port }}
+              protocol: TCP
+            - name: canvas
+              containerPort: {{ .Values.openclaw.gateway.canvasPort }}
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: OPENCLAW_PORT
+              value: "{{ .Values.openclaw.gateway.port }}"
+            - name: OPENCLAW_CANVAS_PORT
+              value: "{{ .Values.openclaw.gateway.canvasPort }}"
+            - name: OPENCLAW_BIND
+              value: "{{ .Values.openclaw.gateway.bind }}"
+            - name: OPENCLAW_LOG_LEVEL
+              value: "{{ .Values.openclaw.logLevel }}"
+            - name: OPENCLAW_AGENT_MODEL
+              value: "{{ .Values.openclaw.agent.model }}"
+            - name: OPENCLAW_GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: gateway-token
+            {{- if .Values.secrets.anthropicApiKey }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: anthropic-api-key
+            {{- end }}
+            {{- if .Values.secrets.telegramBotToken }}
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: telegram-bot-token
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.persistence.config.enabled }}
+            - name: config
+              mountPath: /home/node/.openclaw
+            {{- end }}
+            {{- if .Values.persistence.workspace.enabled }}
+            - name: workspace
+              mountPath: /home/node/.openclaw/workspace
+            {{- end }}
+      volumes:
+        {{- if .Values.persistence.config.enabled }}
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ include "openclaw.fullname" . }}-config
+        {{- end }}
+        {{- if .Values.persistence.workspace.enabled }}
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: {{ include "openclaw.fullname" . }}-workspace
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
